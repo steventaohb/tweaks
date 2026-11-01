@@ -1,0 +1,137 @@
+name: Build private tweaks
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Private source project folder
+        type: choice
+        options: [ccvideobg]
+        default: ccvideobg
+      source_sha:
+        description: Full 40-character commit SHA from steventaohb/deb
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: private-tweak-build
+  cancel-in-progress: false
+jobs:
+  build-and-publish:
+    if: github.repository == 'steventaohb/tweaks' && github.actor == 'steventaohb' && vars.PRIVATE_BUILDS_ENABLED == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      THEOS: ${{ github.workspace }}/theos-roothide
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+    steps:
+      - name: Validate trusted request
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PROJECT: ${{ inputs.project }}
+          READ_TOKEN: ${{ secrets.PRIVATE_SOURCE_READ_TOKEN }}
+          WRITE_TOKEN: ${{ secrets.PRIVATE_RELEASE_WRITE_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,re
+          assert os.environ['PROJECT'] == 'ccvideobg'
+          assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
+          assert os.environ['READ_TOKEN'] and os.environ['WRITE_TOKEN'], 'Configure restricted Actions Secrets first'
+          PY
+      - name: Checkout private source without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: steventaohb/deb
+          ref: ${{ inputs.source_sha }}
+          token: ${{ secrets.PRIVATE_SOURCE_READ_TOKEN }}
+          path: private-source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout pinned toolchain
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: roothide/theos
+          ref: 3ac89c984ec652fd16bcd91b33ae16de45ce76fa
+          path: theos-roothide
+          submodules: recursive
+          persist-credentials: false
+      - name: Checkout pinned SDK
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: theos/sdks
+          ref: 0222fd5413cf4b9af096f37b4621afa2688572f7
+          path: sdk-source
+          sparse-checkout: iPhoneOS16.5.sdk
+          persist-credentials: false
+      - name: Prepare Xcode and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          brew install ldid dpkg xz
+          mkdir -p "$THEOS/sdks"
+          cp -R sdk-source/iPhoneOS16.5.sdk "$THEOS/sdks/"
+      - name: Compile both variants with private logs
+        id: build
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project }}
+        run: |
+          set -euo pipefail
+          cd "private-source/$PROJECT"
+          # Never stream compiler errors/source snippets to this public run.
+          LOG="$RUNNER_TEMP/private-build.log"
+          if ! (python3 scripts/check_release.py && python3 scripts/test_module_behavior.py && sh build.sh rootless roothide) >"$LOG" 2>&1; then
+            echo 'Build failed. Source/compiler output withheld from public logs.'
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,re,subprocess
+          fields=dict(line.split(':',1) for line in Path('control').read_text().splitlines() if ':' in line)
+          version=fields['Version'].strip()
+          assert re.fullmatch(r'(?:0\.[1-9]|[1-9][0-9]*\.[0-9])',version)
+          packages=list(Path('packages').glob('*.deb'))
+          assert len(packages)==2, 'Expected exactly two deb files'
+          archs={subprocess.check_output(['dpkg-deb','-f',str(p),'Architecture'],text=True).strip() for p in packages}
+          assert archs=={'iphoneos-arm64','iphoneos-arm64e'}
+          for p in packages:
+              assert subprocess.check_output(['dpkg-deb','-f',str(p),'Version'],text=True).strip()==version
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('version='+version+'\n')
+          PY
+      - name: Publish debs only to private Release
+        env:
+          RELEASE_TOKEN: ${{ secrets.PRIVATE_RELEASE_WRITE_TOKEN }}
+          PROJECT: ${{ inputs.project }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os,json,pathlib,urllib.request,urllib.error,urllib.parse
+          base='https://api.github.com/repos/steventaohb/deb'
+          headers={'Authorization':'Bearer '+os.environ['RELEASE_TOKEN'],'User-Agent':'rascal-private-build','Accept':'application/vnd.github+json'}
+          def request(url,data=None,content_type='application/json'):
+              h=dict(headers)
+              if data is not None:h['Content-Type']=content_type
+              with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h),timeout=90) as r:return json.load(r)
+          project=os.environ['PROJECT'];version=os.environ['VERSION'];tag=project+'-v'+version
+          root=pathlib.Path('private-source')
+          import subprocess
+          sha=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
+          try:release=request(base+'/releases/tags/'+tag)
+          except urllib.error.HTTPError as e:
+              if e.code!=404:raise RuntimeError('Private Release access failed') from None
+              release=request(base+'/releases',json.dumps({'tag_name':tag,'target_commitish':sha,'name':project+' v'+version,'body':'Rootless and Roothide; author rascal.','draft':False}).encode())
+          # Do not overwrite existing releases silently; bump the source version.
+          assert not release['assets'], 'Release already contains assets; bump version or inspect private Release'
+          for p in sorted((root/project/'packages').glob('*.deb')):
+              url=release['upload_url'].split('{')[0]+'?name='+urllib.parse.quote(p.name)
+              uploaded=request(url,p.read_bytes(),'application/octet-stream')
+              assert uploaded['size']==p.stat().st_size
+          print('Both packages published to the private repository; no public artifacts created.')
+          PY
+      - name: Remove temporary source, packages and compiler log
+        if: always()
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private-source"
+          rm -f "$RUNNER_TEMP/private-build.log"
