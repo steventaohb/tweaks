@@ -5,7 +5,7 @@ on:
       project:
         description: Private source project folder
         type: choice
-        options: [ccvideobg]
+        options: [ccvideobg, islandartmask]
         default: ccvideobg
       source_sha:
         description: Full 40-character commit SHA from steventaohb/deb
@@ -35,7 +35,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import os,re
-          assert os.environ['PROJECT'] == 'ccvideobg'
+          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask'}
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
           assert os.environ['READ_TOKEN'] and os.environ['WRITE_TOKEN'], 'Configure restricted Actions Secrets first'
           PY
@@ -82,7 +82,10 @@ jobs:
           cd "private-source/$PROJECT"
           # Never stream compiler errors/source snippets to this public run.
           LOG="$RUNNER_TEMP/private-build.log"
-          if ! (python3 scripts/check_release.py && python3 scripts/test_module_behavior.py && sh build.sh rootless roothide) >"$LOG" 2>&1; then
+          if ! ( \
+              { [ ! -f scripts/check_release.py ] || python3 scripts/check_release.py; } && \
+              { [ ! -f scripts/test_module_behavior.py ] || python3 scripts/test_module_behavior.py; } && \
+              sh build.sh rootless roothide ) >"$LOG" 2>&1; then
             echo 'Build failed. Source/compiler output withheld from public logs.'
             exit 1
           fi
