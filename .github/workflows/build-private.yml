@@ -133,6 +133,29 @@ jobs:
               assert uploaded['size']==p.stat().st_size
           print('Both packages published to the private repository; no public artifacts created.')
           PY
+      - name: Save failure log privately
+        if: failure()
+        env:
+          RELEASE_TOKEN: ${{ secrets.PRIVATE_RELEASE_WRITE_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,json,base64,urllib.request,urllib.error,pathlib
+          log=pathlib.Path(os.environ['RUNNER_TEMP'])/'private-build.log'
+          if not log.exists(): raise SystemExit(0)
+          text='\n'.join(log.read_text(errors='replace').splitlines()[-160:])
+          base='https://api.github.com/repos/steventaohb/deb/contents/build-logs/last-failure.log'
+          h={'Authorization':'Bearer '+os.environ['RELEASE_TOKEN'],'User-Agent':'rascal-private-build','Accept':'application/vnd.github+json','Content-Type':'application/json'}
+          sha=None
+          try:
+              with urllib.request.urlopen(urllib.request.Request(base,headers=h),timeout=60) as r: sha=json.load(r)['sha']
+          except urllib.error.HTTPError as e:
+              if e.code!=404: raise
+          body={'message':'ci: temporary failure log','content':base64.b64encode(text.encode()).decode(),'branch':'main'}
+          if sha: body['sha']=sha
+          req=urllib.request.Request(base,data=json.dumps(body).encode(),method='PUT',headers=h)
+          urllib.request.urlopen(req,timeout=60).read()
+          print('Failure log saved privately for owner review.')
+          PY
       - name: Remove temporary source, packages and compiler log
         if: always()
         run: |
