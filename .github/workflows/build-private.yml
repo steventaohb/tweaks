@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build-and-publish:
     if: github.repository == 'steventaohb/tweaks' && github.actor == 'steventaohb' && vars.PRIVATE_BUILDS_ENABLED == 'true'
-    runs-on: macos-15
+    runs-on: ${{ inputs.project == 'wechatpresence' && 'macos-15-intel' || 'macos-15' }}
     timeout-minutes: 45
     env:
       THEOS: ${{ github.workspace }}/theos-roothide
