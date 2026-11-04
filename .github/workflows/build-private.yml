@@ -5,7 +5,7 @@ on:
       project:
         description: Private source project folder
         type: choice
-        options: [ccvideobg, islandartmask, dynamicisland]
+        options: [ccvideobg, islandartmask, dynamicisland, rascalgroupactive]
         default: ccvideobg
       scheme:
         description: Package scheme
@@ -42,7 +42,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import os,re
-          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland'}, 'Unsupported project'
+          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive'}, 'Unsupported project'
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
           assert os.environ['READ_TOKEN'] and os.environ['WRITE_TOKEN'], 'Configure restricted Actions Secrets first'
