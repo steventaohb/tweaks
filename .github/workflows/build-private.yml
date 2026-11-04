@@ -5,7 +5,7 @@ on:
       project:
         description: Private source project folder
         type: choice
-        options: [ccvideobg, islandartmask, dynamicisland, rascalgroupactive]
+        options: [ccvideobg, islandartmask, dynamicisland, rascalgroupactive, wechatpresence]
         default: ccvideobg
       scheme:
         description: Package scheme
@@ -53,11 +53,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import os,re
-          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive'}, 'Unsupported project'
+          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive', 'wechatpresence'}, 'Unsupported project'
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
           assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
-          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT']=='rascalgroupactive' and os.environ['SCHEME']=='rootless')
+          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence'} and os.environ['SCHEME']=='rootless')
+          assert os.environ['PROJECT']!='wechatpresence' or os.environ['OUTPUT']=='dylib', 'WeChatPresence is standalone dylib only'
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
           assert os.environ['READ_TOKEN'] and os.environ['WRITE_TOKEN'], 'Configure restricted Actions Secrets first'
           PY
@@ -117,10 +118,16 @@ jobs:
               { [ ! -f scripts/test_review.py ] || python3 scripts/test_review.py; } && \
               { [ ! -f scripts/check_release.py ] || python3 scripts/check_release.py; } && \
               { [ ! -f scripts/test_module_behavior.py ] || python3 scripts/test_module_behavior.py; } && \
+              { [ ! -f scripts/embed_resources.py ] || python3 scripts/embed_resources.py --check; } && \
               { if [ "$OUTPUT" = dylib ]; then
+                  case "$PROJECT" in
+                    rascalgroupactive) TWEAK_BINARY=RascalRascalGroupActive; OUTPUT_BINARY=RascalGroupActive ;;
+                    wechatpresence) TWEAK_BINARY=RascalWeChatPresence; OUTPUT_BINARY=WeChatPresence_0.1 ;;
+                    *) exit 1 ;;
+                  esac &&
                   make clean all THEOS_PACKAGE_SCHEME=rootless &&
                   mkdir -p standalone &&
-                  cp .theos/obj/RascalRascalGroupActive.dylib standalone/RascalGroupActive.dylib
+                  cp ".theos/obj/$TWEAK_BINARY.dylib" "standalone/$OUTPUT_BINARY.dylib"
                 else sh build.sh "$@"; fi; } ) >"$LOG" 2>&1; then
             echo 'Build failed. Source/compiler output withheld from public logs.'
             exit 1
@@ -137,8 +144,23 @@ jobs:
               'both': {'iphoneos-arm64','iphoneos-arm64e'},
           }[os.environ['SCHEME']]
           if os.environ['OUTPUT']=='dylib':
-              binary=Path('standalone/RascalGroupActive.dylib')
+              filename={'rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib'}[os.environ['PROJECT']]
+              binary=Path('standalone')/filename
               assert binary.is_file() and binary.stat().st_size>0
+              if os.environ['PROJECT']=='wechatpresence':
+                  archs=set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())
+                  assert archs=={'arm64','arm64e'}, 'Both required architectures must be present'
+                  dependencies=subprocess.check_output(['otool','-L',str(binary)],text=True)
+                  assert 'Preferences.framework' not in dependencies
+                  assert 'CydiaSubstrate' in dependencies or 'libsubstrate' in dependencies
+                  strings=subprocess.check_output(['strings',str(binary)],text=True)
+                  assert 'RascalWeChatPresenceSettingsController' in strings
+                  assert 'RascalWeChatPresenceTracker' in strings
+                  assert 'com.tencent.xin' not in strings
+                  assert 'RascalGroupActive' not in strings
+                  data=binary.read_bytes()
+                  assert Path('Resources/project-icon.png').read_bytes() in data, 'Original PNG absent from dylib'
+                  assert not list(Path('standalone').glob('*.bundle'))
               with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('version='+version+'\n')
               raise SystemExit(0)
           packages=list(Path('packages').glob('*.deb'))
