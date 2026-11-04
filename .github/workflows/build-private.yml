@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build-and-publish:
     if: github.repository == 'steventaohb/tweaks' && github.actor == 'steventaohb' && vars.PRIVATE_BUILDS_ENABLED == 'true'
-    runs-on: ${{ inputs.project == 'wechatpresence' && 'macos-15-intel' || 'macos-15' }}
+    runs-on: ${{ inputs.project == 'wechatpresence' && 'macos-14' || 'macos-15' }}
     timeout-minutes: 45
     env:
       THEOS: ${{ github.workspace }}/theos-roothide
@@ -91,7 +91,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          if [ "${{ inputs.project }}" = wechatpresence ]; then
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          fi
           brew install ldid dpkg xz
           mkdir -p "$THEOS/sdks"
           cp -R sdk-source/iPhoneOS16.5.sdk "$THEOS/sdks/"
