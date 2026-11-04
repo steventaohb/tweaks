@@ -18,6 +18,10 @@ on:
         type: choice
         options: [deb, dylib]
         default: deb
+      release_suffix:
+        description: Optional immutable candidate suffix (lowercase letters, digits and hyphens)
+        type: string
+        default: ''
       source_sha:
         description: Full 40-character commit SHA from steventaohb/deb
         required: true
@@ -43,6 +47,7 @@ jobs:
           PROJECT: ${{ inputs.project }}
           SCHEME: ${{ inputs.scheme }}
           OUTPUT: ${{ inputs.output }}
+          RELEASE_SUFFIX: ${{ inputs.release_suffix }}
           READ_TOKEN: ${{ secrets.PRIVATE_SOURCE_READ_TOKEN }}
           WRITE_TOKEN: ${{ secrets.PRIVATE_RELEASE_WRITE_TOKEN }}
         run: |
@@ -50,6 +55,7 @@ jobs:
           import os,re
           assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive'}, 'Unsupported project'
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
+          assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
           assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT']=='rascalgroupactive' and os.environ['SCHEME']=='rootless')
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
@@ -95,6 +101,7 @@ jobs:
           PROJECT: ${{ inputs.project }}
           SCHEME: ${{ inputs.scheme }}
           OUTPUT: ${{ inputs.output }}
+          RELEASE_SUFFIX: ${{ inputs.release_suffix }}
         run: |
           set -euo pipefail
           cd "private-source/$PROJECT"
@@ -107,6 +114,7 @@ jobs:
           # Never stream compiler errors/source snippets to this public run.
           LOG="$RUNNER_TEMP/private-build.log"
           if ! ( \
+              { [ ! -f scripts/test_review.py ] || python3 scripts/test_review.py; } && \
               { [ ! -f scripts/check_release.py ] || python3 scripts/check_release.py; } && \
               { [ ! -f scripts/test_module_behavior.py ] || python3 scripts/test_module_behavior.py; } && \
               { if [ "$OUTPUT" = dylib ]; then
@@ -151,6 +159,7 @@ jobs:
           PROJECT: ${{ inputs.project }}
           SCHEME: ${{ inputs.scheme }}
           OUTPUT: ${{ inputs.output }}
+          RELEASE_SUFFIX: ${{ inputs.release_suffix }}
           VERSION: ${{ steps.build.outputs.version }}
         run: |
           python3 - <<'PY'
@@ -162,12 +171,15 @@ jobs:
               if data is not None:h['Content-Type']=content_type
               with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h),timeout=90) as r:return json.load(r)
           project=os.environ['PROJECT'];version=os.environ['VERSION'];kind=os.environ['OUTPUT'];tag=project+('-dylib' if kind=='dylib' else '')+'-v'+version
+          suffix=os.environ['RELEASE_SUFFIX']
+          if suffix: tag+='-'+suffix
           scheme=os.environ['SCHEME']
           label,expected_count={'rootless':('Rootless',1),'roothide':('Roothide',1),'both':('Rootless and Roothide',2)}[scheme]
           release_body=f'{label}; {expected_count} deb package(s); author rascal.'
           root=pathlib.Path('private-source')
           packages=sorted((root/project/('standalone' if kind=='dylib' else 'packages')).glob('*.dylib' if kind=='dylib' else '*.deb'))
           if kind=='dylib': release_body='Rootless standalone dylib diagnostic candidate; author rascal.'
+          if suffix: release_body+=' Candidate: '+suffix+'.'
           assert len(packages)==expected_count, 'Unexpected deb count for selected scheme'
           import subprocess
           sha=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
