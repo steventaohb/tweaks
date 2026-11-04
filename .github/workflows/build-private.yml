@@ -13,6 +13,11 @@ on:
         type: choice
         options: [rootless, roothide, both]
         default: rootless
+      output:
+        description: Private release output format
+        type: choice
+        options: [deb, dylib]
+        default: deb
       source_sha:
         description: Full 40-character commit SHA from steventaohb/deb
         required: true
@@ -37,6 +42,7 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           PROJECT: ${{ inputs.project }}
           SCHEME: ${{ inputs.scheme }}
+          OUTPUT: ${{ inputs.output }}
           READ_TOKEN: ${{ secrets.PRIVATE_SOURCE_READ_TOKEN }}
           WRITE_TOKEN: ${{ secrets.PRIVATE_RELEASE_WRITE_TOKEN }}
         run: |
@@ -44,6 +50,8 @@ jobs:
           import os,re
           assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive'}, 'Unsupported project'
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
+          assert os.environ['OUTPUT'] in {'deb','dylib'}
+          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT']=='rascalgroupactive' and os.environ['SCHEME']=='rootless')
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
           assert os.environ['READ_TOKEN'] and os.environ['WRITE_TOKEN'], 'Configure restricted Actions Secrets first'
           PY
@@ -86,6 +94,7 @@ jobs:
         env:
           PROJECT: ${{ inputs.project }}
           SCHEME: ${{ inputs.scheme }}
+          OUTPUT: ${{ inputs.output }}
         run: |
           set -euo pipefail
           cd "private-source/$PROJECT"
@@ -100,7 +109,11 @@ jobs:
           if ! ( \
               { [ ! -f scripts/check_release.py ] || python3 scripts/check_release.py; } && \
               { [ ! -f scripts/test_module_behavior.py ] || python3 scripts/test_module_behavior.py; } && \
-              sh build.sh "$@" ) >"$LOG" 2>&1; then
+              { if [ "$OUTPUT" = dylib ]; then
+                  make clean all THEOS_PACKAGE_SCHEME=rootless &&
+                  mkdir -p standalone &&
+                  cp .theos/obj/RascalRascalGroupActive.dylib standalone/RascalGroupActive.dylib
+                else sh build.sh "$@"; fi; } ) >"$LOG" 2>&1; then
             echo 'Build failed. Source/compiler output withheld from public logs.'
             exit 1
           fi
@@ -115,6 +128,11 @@ jobs:
               'roothide': {'iphoneos-arm64e'},
               'both': {'iphoneos-arm64','iphoneos-arm64e'},
           }[os.environ['SCHEME']]
+          if os.environ['OUTPUT']=='dylib':
+              binary=Path('standalone/RascalGroupActive.dylib')
+              assert binary.is_file() and binary.stat().st_size>0
+              with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('version='+version+'\n')
+              raise SystemExit(0)
           packages=list(Path('packages').glob('*.deb'))
           assert len(packages)==len(expected), 'Unexpected deb count for selected scheme'
           archs={subprocess.check_output(['dpkg-deb','-f',str(p),'Architecture'],text=True).strip() for p in packages}
@@ -132,6 +150,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.PRIVATE_RELEASE_WRITE_TOKEN }}
           PROJECT: ${{ inputs.project }}
           SCHEME: ${{ inputs.scheme }}
+          OUTPUT: ${{ inputs.output }}
           VERSION: ${{ steps.build.outputs.version }}
         run: |
           python3 - <<'PY'
@@ -142,19 +161,20 @@ jobs:
               h=dict(headers)
               if data is not None:h['Content-Type']=content_type
               with urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h),timeout=90) as r:return json.load(r)
-          project=os.environ['PROJECT'];version=os.environ['VERSION'];tag=project+'-v'+version
+          project=os.environ['PROJECT'];version=os.environ['VERSION'];kind=os.environ['OUTPUT'];tag=project+('-dylib' if kind=='dylib' else '')+'-v'+version
           scheme=os.environ['SCHEME']
           label,expected_count={'rootless':('Rootless',1),'roothide':('Roothide',1),'both':('Rootless and Roothide',2)}[scheme]
           release_body=f'{label}; {expected_count} deb package(s); author rascal.'
           root=pathlib.Path('private-source')
-          packages=sorted((root/project/'packages').glob('*.deb'))
+          packages=sorted((root/project/('standalone' if kind=='dylib' else 'packages')).glob('*.dylib' if kind=='dylib' else '*.deb'))
+          if kind=='dylib': release_body='Rootless standalone dylib diagnostic candidate; author rascal.'
           assert len(packages)==expected_count, 'Unexpected deb count for selected scheme'
           import subprocess
           sha=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
           try:release=request(base+'/releases/tags/'+tag)
           except urllib.error.HTTPError as e:
               if e.code!=404:raise RuntimeError('Private Release access failed') from None
-              release=request(base+'/releases',json.dumps({'tag_name':tag,'target_commitish':sha,'name':project+' v'+version,'body':release_body,'draft':False}).encode())
+              release=request(base+'/releases',json.dumps({'tag_name':tag,'target_commitish':sha,'name':project+' v'+version,'body':release_body,'draft':False,'prerelease':True}).encode())
           # Do not overwrite existing releases silently; bump the source version.
           assert not release['assets'], 'Release already contains assets; bump version or inspect private Release'
           assert release.get('body')==release_body, 'Release description differs; bump version or inspect private Release'
