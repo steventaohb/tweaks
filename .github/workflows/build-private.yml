@@ -57,8 +57,8 @@ jobs:
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
           assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
-          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber'} and os.environ['SCHEME']=='rootless')
-          assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['OUTPUT']=='dylib' and os.environ['SCHEME']=='rootless'), 'WeChatUIGrabber is rootless standalone dylib only'
+          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
+          assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['OUTPUT']=='dylib' and os.environ['SCHEME'] in {'rootless','roothide'}), 'WeChatUIGrabber requires a single standalone dylib scheme'
           assert os.environ['PROJECT']!='wechatpresence' or os.environ['OUTPUT']=='dylib', 'WeChatPresence is standalone dylib only'
           assert os.environ['PROJECT']!='ccfusion' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='deb'), 'CCFusion diagnostic build is rootless deb only'
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
@@ -134,7 +134,7 @@ jobs:
                     *) exit 1 ;;
                   esac &&
                   { if [ "$PROJECT" = wechatuigrabber ]; then
-                      make clean all THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1;
+                      make clean all THEOS_PACKAGE_SCHEME="$SCHEME" FINALPACKAGE=1;
                     else make clean all THEOS_PACKAGE_SCHEME=rootless; fi; } &&
                   mkdir -p standalone &&
                   cp ".theos/obj/$TWEAK_BINARY.dylib" "standalone/$OUTPUT_BINARY.dylib"
@@ -217,7 +217,7 @@ jobs:
           release_body=f'{label}; {expected_count} deb package(s); author rascal.'
           root=pathlib.Path('private-source')
           packages=sorted((root/project/('standalone' if kind=='dylib' else 'packages')).glob('*.dylib' if kind=='dylib' else '*.deb'))
-          if kind=='dylib': release_body='Rootless standalone dylib diagnostic candidate; author rascal.'
+          if kind=='dylib': release_body=label+' standalone dylib diagnostic candidate; author rascal.'
           if suffix: release_body+=' Candidate: '+suffix+'.'
           assert len(packages)==expected_count, 'Unexpected deb count for selected scheme'
           import subprocess
