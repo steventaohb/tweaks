@@ -133,7 +133,9 @@ jobs:
                     wechatpresence) TWEAK_BINARY=RascalWeChatPresence; OUTPUT_BINARY=WeChatPresence_0.1 ;;
                     *) exit 1 ;;
                   esac &&
-                  make clean all THEOS_PACKAGE_SCHEME=rootless &&
+                  { if [ "$PROJECT" = wechatuigrabber ]; then
+                      make clean all THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1;
+                    else make clean all THEOS_PACKAGE_SCHEME=rootless; fi; } &&
                   mkdir -p standalone &&
                   cp ".theos/obj/$TWEAK_BINARY.dylib" "standalone/$OUTPUT_BINARY.dylib"
                 else sh build.sh "$@"; fi; } ) >"$LOG" 2>&1; then
