@@ -129,7 +129,7 @@ jobs:
               { if [ "$OUTPUT" = dylib ]; then
                   case "$PROJECT" in
                     rascalgroupactive) TWEAK_BINARY=RascalRascalGroupActive; OUTPUT_BINARY=RascalGroupActive ;;
-                    wechatuigrabber) TWEAK_BINARY=WeChatUIGrabber; OUTPUT_BINARY=WeChatUIGrabber_0.1 ;;
+                    wechatuigrabber) TWEAK_BINARY=WeChatUIGrabber; OUTPUT_BINARY="WeChatUIGrabber_$(python3 -c 'from pathlib import Path; print(dict(line.split(":",1) for line in Path("control").read_text().splitlines() if ":" in line)["Version"].strip())')" ;;
                     wechatpresence) TWEAK_BINARY=RascalWeChatPresence; OUTPUT_BINARY=WeChatPresence_0.1 ;;
                     *) exit 1 ;;
                   esac &&
@@ -154,7 +154,7 @@ jobs:
               'both': {'iphoneos-arm64','iphoneos-arm64e'},
           }[os.environ['SCHEME']]
           if os.environ['OUTPUT']=='dylib':
-              filename={'rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':'WeChatUIGrabber_0.1.dylib'}[os.environ['PROJECT']]
+              filename={'rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib'}[os.environ['PROJECT']]
               binary=Path('standalone')/filename
               assert binary.is_file() and binary.stat().st_size>0
               if os.environ['PROJECT']=='wechatuigrabber':
