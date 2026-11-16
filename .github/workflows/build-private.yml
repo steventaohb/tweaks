@@ -58,7 +58,7 @@ jobs:
           assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
           assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
-          assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['OUTPUT']=='dylib' and os.environ['SCHEME'] in {'rootless','roothide'}), 'WeChatUIGrabber requires a single standalone dylib scheme'
+          assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['SCHEME'] in {'rootless','roothide'} and (os.environ['OUTPUT']=='dylib' or (os.environ['OUTPUT']=='deb' and os.environ['SCHEME']=='rootless'))), 'WeChatUIGrabber deb output is rootless only'
           assert os.environ['PROJECT']!='wechatpresence' or os.environ['OUTPUT']=='dylib', 'WeChatPresence is standalone dylib only'
           assert os.environ['PROJECT']!='ccfusion' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='deb'), 'CCFusion diagnostic build is rootless deb only'
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
@@ -163,7 +163,11 @@ jobs:
                   strings=subprocess.check_output(['strings',str(binary)],text=True)
                   assert 'WeChatUIGrabber' in strings
                   assert 'rascal_wechatuigrabber' in strings
-                  assert not list(Path('.').glob('*.plist'))
+                  filters=list(Path('.').glob('*.plist'))
+                  if filters:
+                      import plistlib
+                      assert filters==[Path('WeChatUIGrabber.plist')]
+                      assert plistlib.loads(filters[0].read_bytes())['Filter']=={'Bundles':['com.tencent.xin'],'Executables':['WeChat']}
               if os.environ['PROJECT']=='wechatpresence':
                   archs=set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())
                   assert archs=={'arm64','arm64e'}, 'Both required architectures must be present'
@@ -186,6 +190,23 @@ jobs:
           assert archs==expected, 'Unexpected deb architectures for selected scheme'
           for p in packages:
               assert subprocess.check_output(['dpkg-deb','-f',str(p),'Version'],text=True).strip()==version
+              if os.environ['PROJECT']=='wechatuigrabber':
+                  control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
+                  assert 'mobilesubstrate' in control, 'Tweak dependency is missing'
+                  assert subprocess.check_output(['dpkg-deb','-f',str(p),'Architecture'],text=True).strip()=='iphoneos-arm64'
+                  members=subprocess.check_output(['dpkg-deb','-c',str(p)],text=True)
+                  assert 'var/jb/Library/MobileSubstrate/DynamicLibraries/WeChatUIGrabber.dylib' in members
+                  import tempfile
+                  with tempfile.TemporaryDirectory(prefix='wcg-package-check-') as extracted:
+                      subprocess.run(['dpkg-deb','-x',str(p),extracted],check=True)
+                      binary=Path(extracted)/'var/jb/Library/MobileSubstrate/DynamicLibraries/WeChatUIGrabber.dylib'
+                      archs=set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())
+                      assert archs=={'arm64','arm64e'}, 'Both required slices must be present in the Rootless deb'
+                      strings=subprocess.check_output(['strings',str(binary)],text=True)
+                      assert 'rascal_wechatuigrabber' in strings
+                      import plistlib
+                      injection=plistlib.loads(binary.with_suffix('.plist').read_bytes())
+                      assert injection['Filter']=={'Bundles':['com.tencent.xin'],'Executables':['WeChat']}
           with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('version='+version+'\n')
           PY
           then
