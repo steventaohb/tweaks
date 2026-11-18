@@ -57,7 +57,7 @@ jobs:
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
           assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
-          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber','cryptosuite'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
+          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber','cryptosuite','alltags'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
           assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['SCHEME'] in {'rootless','roothide'} and (os.environ['OUTPUT']=='dylib' or (os.environ['OUTPUT']=='deb' and os.environ['SCHEME']=='rootless'))), 'WeChatUIGrabber deb output is rootless only'
           assert os.environ['PROJECT']!='cryptosuite' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='deb'), 'CryptoSuite Rootless deb only'
           assert os.environ['PROJECT']!='wechatpresence' or os.environ['OUTPUT']=='dylib', 'WeChatPresence is standalone dylib only'
@@ -131,6 +131,7 @@ jobs:
               { if [ "$OUTPUT" = dylib ]; then
                   case "$PROJECT" in
                     cryptosuite) TWEAK_BINARY=RascalCryptoSuite; OUTPUT_BINARY="CryptoSuite_$(python3 -c 'from pathlib import Path; print(dict(line.split(":",1) for line in Path("control").read_text().splitlines() if ":" in line)["Version"].strip())')" ;;
+                    alltags) TWEAK_BINARY=RascalAllTags; OUTPUT_BINARY="AllTags_$(python3 -c 'from pathlib import Path; print(dict(line.split(":",1) for line in Path("control").read_text().splitlines() if ":" in line)["Version"].strip())')" ;;
                     rascalgroupactive) TWEAK_BINARY=RascalRascalGroupActive; OUTPUT_BINARY=RascalGroupActive ;;
                     wechatuigrabber) TWEAK_BINARY=WeChatUIGrabber; OUTPUT_BINARY="WeChatUIGrabber_$(python3 -c 'from pathlib import Path; print(dict(line.split(":",1) for line in Path("control").read_text().splitlines() if ":" in line)["Version"].strip())')" ;;
                     wechatpresence) TWEAK_BINARY=RascalWeChatPresence; OUTPUT_BINARY=WeChatPresence_0.1 ;;
@@ -161,7 +162,7 @@ jobs:
           if os.environ['PROJECT']=='cryptosuite' and os.environ['OUTPUT']=='deb':
               expected={'iphoneos-arm64'}
           if os.environ['OUTPUT']=='dylib':
-              filename={'cryptosuite':f'CryptoSuite_{version}.dylib','rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib'}[os.environ['PROJECT']]
+              filename={'cryptosuite':f'CryptoSuite_{version}.dylib','alltags':f'AllTags_{version}.dylib','rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib'}[os.environ['PROJECT']]
               binary=Path('standalone')/filename
               assert binary.is_file() and binary.stat().st_size>0
               if os.environ['PROJECT']=='wechatuigrabber':
@@ -175,6 +176,11 @@ jobs:
                       import plistlib
                       assert filters==[Path('WeChatUIGrabber.plist')]
                       assert plistlib.loads(filters[0].read_bytes())['Filter']=={'Bundles':['com.tencent.xin'],'Executables':['WeChat']}
+              if os.environ['PROJECT']=='alltags':
+                  assert set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())=={'arm64','arm64e'}
+                  icon=Path('layout/Library/MobileSubstrate/DynamicLibraries/RascalAllTagsResources.bundle/project-icon.png').read_bytes()
+                  assert icon in binary.read_bytes()
+                  assert 'RascalAllTagsHomeController' in subprocess.check_output(['strings',str(binary)],text=True)
               if os.environ['PROJECT']=='cryptosuite':
                   assert set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())=={'arm64','arm64e'}
                   deps=subprocess.check_output(['otool','-L',str(binary)],text=True)
