@@ -59,7 +59,7 @@ jobs:
           assert os.environ['OUTPUT'] in {'deb','dylib'}
           assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber','cryptosuite'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
           assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['SCHEME'] in {'rootless','roothide'} and (os.environ['OUTPUT']=='dylib' or (os.environ['OUTPUT']=='deb' and os.environ['SCHEME']=='rootless'))), 'WeChatUIGrabber deb output is rootless only'
-          assert os.environ['PROJECT']!='cryptosuite' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='dylib'), 'CryptoSuite standalone rootless only'
+          assert os.environ['PROJECT']!='cryptosuite' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='deb'), 'CryptoSuite Rootless deb only'
           assert os.environ['PROJECT']!='wechatpresence' or os.environ['OUTPUT']=='dylib', 'WeChatPresence is standalone dylib only'
           assert os.environ['PROJECT']!='ccfusion' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='deb'), 'CCFusion diagnostic build is rootless deb only'
           assert re.fullmatch(r'[0-9a-fA-F]{40}', os.environ['SOURCE_SHA']), 'Use an exact private commit SHA'
@@ -157,6 +157,8 @@ jobs:
               'roothide': {'iphoneos-arm64e'},
               'both': {'iphoneos-arm64','iphoneos-arm64e'},
           }[os.environ['SCHEME']]
+          if os.environ['PROJECT']=='cryptosuite' and os.environ['OUTPUT']=='deb':
+              expected={'iphoneos-arm'}
           if os.environ['OUTPUT']=='dylib':
               filename={'cryptosuite':f'CryptoSuite_{version}.dylib','rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib'}[os.environ['PROJECT']]
               binary=Path('standalone')/filename
@@ -201,6 +203,19 @@ jobs:
           assert archs==expected, 'Unexpected deb architectures for selected scheme'
           for p in packages:
               assert subprocess.check_output(['dpkg-deb','-f',str(p),'Version'],text=True).strip()==version
+              if os.environ['PROJECT']=='cryptosuite':
+                  import tempfile,plistlib
+                  control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
+                  assert 'mobilesubstrate' not in control.lower() and 'preferenceloader' not in control.lower()
+                  with tempfile.TemporaryDirectory(prefix='cryptosuite-package-check-') as extracted:
+                      subprocess.run(['dpkg-deb','-x',str(p),extracted],check=True)
+                      package=Path(extracted)/'var/jb/Library/MobileSubstrate/DynamicLibraries/RascalCryptoSuite.dylib'
+                      injection=plistlib.loads(package.with_suffix('.plist').read_bytes())
+                      assert injection['Filter']=={'Bundles':['com.tencent.xin']}
+                      assert set(subprocess.check_output(['lipo','-archs',str(package)],text=True).split())=={'arm64','arm64e'}
+                      dependencies=subprocess.check_output(['otool','-L',str(package)],text=True).lower()
+                      assert not any(x in dependencies for x in ['substrate','preferences.framework','libroot','libroothide'])
+                      assert not list(Path(extracted).rglob('*.bundle'))
               if os.environ['PROJECT']=='wechatuigrabber':
                   control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
                   assert 'mobilesubstrate' in control, 'Tweak dependency is missing'
