@@ -207,6 +207,7 @@ jobs:
                   import tempfile,plistlib
                   control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
                   assert 'mobilesubstrate' not in control.lower() and 'preferenceloader' not in control.lower()
+                  assert 'com.25mao.wcplugins.rootless' in control
                   with tempfile.TemporaryDirectory(prefix='cryptosuite-package-check-') as extracted:
                       subprocess.run(['dpkg-deb','-x',str(p),extracted],check=True)
                       package=Path(extracted)/'var/jb/Library/MobileSubstrate/DynamicLibraries/RascalCryptoSuite.dylib'
@@ -216,6 +217,9 @@ jobs:
                       dependencies=subprocess.check_output(['otool','-L',str(package)],text=True).lower()
                       assert not any(x in dependencies for x in ['preferences.framework','libroot','libroothide'])
                       assert not list(Path(extracted).rglob('*.bundle'))
+                      strings=subprocess.check_output(['strings',str(package)],text=True)
+                      assert 'registerControllerWithTitle:version:controller:' in strings
+                      assert 'RascalCryptoSuiteSettings' in strings
               if os.environ['PROJECT']=='wechatuigrabber':
                   control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
                   assert 'mobilesubstrate' in control, 'Tweak dependency is missing'
