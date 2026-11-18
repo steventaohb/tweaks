@@ -5,7 +5,7 @@ on:
       project:
         description: Private source project folder
         type: choice
-        options: [ccvideobg, islandartmask, dynamicisland, rascalgroupactive, wechatpresence, ccfusion, keyboardtune, wechatuigrabber, cryptosuite, supermodule]
+        options: [ccvideobg, islandartmask, dynamicisland, rascalgroupactive, wechatpresence, ccfusion, keyboardtune, wechatuigrabber, cryptosuite, supermodule, alltags]
         default: ccvideobg
       scheme:
         description: Package scheme
@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build-and-publish:
     if: github.repository == 'steventaohb/tweaks' && github.actor == 'steventaohb' && vars.PRIVATE_BUILDS_ENABLED == 'true'
-    runs-on: ${{ (inputs.project == 'wechatuigrabber' || inputs.project == 'cryptosuite' || inputs.project == 'supermodule') && 'macos-15-intel' || inputs.project == 'wechatpresence' && 'macos-14' || 'macos-15' }}
+    runs-on: ${{ (inputs.project == 'wechatuigrabber' || inputs.project == 'cryptosuite' || inputs.project == 'supermodule' || inputs.project == 'alltags') && 'macos-15-intel' || inputs.project == 'wechatpresence' && 'macos-14' || 'macos-15' }}
     timeout-minutes: 45
     env:
       THEOS: ${{ github.workspace }}/theos-roothide
@@ -53,7 +53,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import os,re
-          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive', 'wechatpresence', 'ccfusion', 'keyboardtune', 'wechatuigrabber', 'cryptosuite', 'supermodule'}, 'Unsupported project'
+          assert os.environ['PROJECT'] in {'ccvideobg', 'islandartmask', 'dynamicisland', 'rascalgroupactive', 'wechatpresence', 'ccfusion', 'keyboardtune', 'wechatuigrabber', 'cryptosuite', 'supermodule', 'alltags'}, 'Unsupported project'
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
           assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
@@ -123,6 +123,7 @@ jobs:
           LOG="$RUNNER_TEMP/private-build.log"
           if ! ( \
               { [ ! -f tests/test_source.py ] || python3 tests/test_source.py; } && \
+              { [ "$PROJECT" != alltags ] || bash tests/run.sh; } && \
               { [ ! -f scripts/test_review.py ] || python3 scripts/test_review.py; } && \
               { [ ! -f scripts/check_release.py ] || python3 scripts/check_release.py; } && \
               { [ ! -f scripts/test_module_behavior.py ] || python3 scripts/test_module_behavior.py; } && \
@@ -220,6 +221,27 @@ jobs:
                       strings=subprocess.check_output(['strings',str(package)],text=True)
                       assert 'registerControllerWithTitle:version:controller:' in strings
                       assert 'RascalCryptoSuiteSettings' in strings
+              if os.environ['PROJECT']=='alltags':
+                  import tempfile,plistlib
+                  assert fields['Package'].strip()=='com.rascal.alltags'
+                  assert subprocess.check_output(['dpkg-deb','-f',str(p),'Author'],text=True).strip()=='rascal'
+                  with tempfile.TemporaryDirectory(prefix='alltags-package-check-') as extracted:
+                      subprocess.run(['dpkg-deb','-x',str(p),extracted],check=True)
+                      binaries=list(Path(extracted).rglob('RascalAllTags.dylib'))
+                      assert len(binaries)==1
+                      binary=binaries[0]
+                      assert set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())=={'arm64','arm64e'}
+                      assert plistlib.loads(binary.with_suffix('.plist').read_bytes())['Filter']=={'Bundles':['com.tencent.xin']}
+                      resources=binary.parent/'RascalAllTagsResources.bundle'
+                      info=plistlib.loads((resources/'Info.plist').read_bytes())
+                      assert info['CFBundleShortVersionString']==version
+                      assert info['CFBundleIdentifier']=='com.rascal.alltags.resources'
+                      assert (resources/'project-icon.png').is_file()
+                      deps=subprocess.check_output(['otool','-L',str(binary)],text=True)
+                      assert 'Preferences.framework' not in deps
+                      strings=subprocess.check_output(['strings',str(binary)],text=True)
+                      assert 'RascalAllTagsHomeController' in strings
+                      assert 'RascalAllTagsProfileButton' in strings
               if os.environ['PROJECT']=='wechatuigrabber':
                   control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
                   assert 'mobilesubstrate' in control, 'Tweak dependency is missing'
