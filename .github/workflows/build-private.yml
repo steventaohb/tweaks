@@ -158,7 +158,7 @@ jobs:
               'both': {'iphoneos-arm64','iphoneos-arm64e'},
           }[os.environ['SCHEME']]
           if os.environ['PROJECT']=='cryptosuite' and os.environ['OUTPUT']=='deb':
-              expected={'iphoneos-arm'}
+              expected={'iphoneos-arm64'}
           if os.environ['OUTPUT']=='dylib':
               filename={'cryptosuite':f'CryptoSuite_{version}.dylib','rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib'}[os.environ['PROJECT']]
               binary=Path('standalone')/filename
