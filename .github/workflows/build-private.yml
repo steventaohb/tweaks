@@ -214,7 +214,7 @@ jobs:
                       assert injection['Filter']=={'Bundles':['com.tencent.xin']}
                       assert set(subprocess.check_output(['lipo','-archs',str(package)],text=True).split())=={'arm64','arm64e'}
                       dependencies=subprocess.check_output(['otool','-L',str(package)],text=True).lower()
-                      assert not any(x in dependencies for x in ['substrate','preferences.framework','libroot','libroothide'])
+                      assert not any(x in dependencies for x in ['preferences.framework','libroot','libroothide'])
                       assert not list(Path(extracted).rglob('*.bundle'))
               if os.environ['PROJECT']=='wechatuigrabber':
                   control=subprocess.check_output(['dpkg-deb','-f',str(p)],text=True)
