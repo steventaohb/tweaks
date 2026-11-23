@@ -172,7 +172,7 @@ jobs:
                   strings=subprocess.check_output(['strings',str(binary)],text=True)
                   for needle in ('RascalDouyinSharinganPanel','AWEMusicCoverButton',
                                  'rascal_douyinsharingan_attachToWindow','generalPasteboard',
-                                 'numberOfTouchesRequired'):
+                                 '顺时针','逆时针','诊断'):
                       assert needle in strings, needle
                   # The panel lives in the binary; no PreferenceLoader bundle may be produced.
                   assert not list(Path('standalone').glob('*.bundle'))
