@@ -135,6 +135,7 @@ jobs:
                     rascalgroupactive) TWEAK_BINARY=RascalRascalGroupActive; OUTPUT_BINARY=RascalGroupActive ;;
                     wechatuigrabber) TWEAK_BINARY=WeChatUIGrabber; OUTPUT_BINARY="WeChatUIGrabber_$(python3 -c 'from pathlib import Path; print(dict(line.split(":",1) for line in Path("control").read_text().splitlines() if ":" in line)["Version"].strip())')" ;;
                     wechatpresence) TWEAK_BINARY=RascalWeChatPresence; OUTPUT_BINARY=WeChatPresence_0.1 ;;
+                    douyinsharingan) TWEAK_BINARY=RascalDouyinSharingan; OUTPUT_BINARY="RascalDouyinSharingan_$(python3 -c 'from pathlib import Path; print(dict(line.split(":",1) for line in Path("control").read_text().splitlines() if ":" in line)["Version"].strip())')" ;;
                     *) exit 1 ;;
                   esac &&
                   { if [ "$PROJECT" = cryptosuite ]; then
