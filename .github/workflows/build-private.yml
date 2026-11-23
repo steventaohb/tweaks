@@ -353,10 +353,3 @@ jobs:
         run: |
           rm -rf "$GITHUB_WORKSPACE/private-source"
           rm -f "$RUNNER_TEMP/private-build.log"
- log saved privately for owner review.')
-          PY
-      - name: Remove temporary source, packages and compiler log
-        if: always()
-        run: |
-          rm -rf "$GITHUB_WORKSPACE/private-source"
-          rm -f "$RUNNER_TEMP/private-build.log"
