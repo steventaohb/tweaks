@@ -57,7 +57,7 @@ jobs:
           assert os.environ['SCHEME'] in {'rootless', 'roothide', 'both'}, 'Unsupported scheme'
           assert not os.environ['RELEASE_SUFFIX'] or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}',os.environ['RELEASE_SUFFIX']), 'Invalid candidate suffix'
           assert os.environ['OUTPUT'] in {'deb','dylib'}
-          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber','cryptosuite','alltags'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
+          assert os.environ['OUTPUT']!='dylib' or (os.environ['PROJECT'] in {'rascalgroupactive','wechatpresence','wechatuigrabber','cryptosuite','alltags','douyinsharingan'} and (os.environ['SCHEME']=='rootless' or (os.environ['PROJECT']=='wechatuigrabber' and os.environ['SCHEME']=='roothide')))
           assert os.environ['PROJECT']!='wechatuigrabber' or (os.environ['SCHEME'] in {'rootless','roothide'} and (os.environ['OUTPUT']=='dylib' or (os.environ['OUTPUT']=='deb' and os.environ['SCHEME']=='rootless'))), 'WeChatUIGrabber deb output is rootless only'
           assert os.environ['PROJECT']!='cryptosuite' or (os.environ['SCHEME']=='rootless' and os.environ['OUTPUT']=='deb'), 'CryptoSuite Rootless deb only'
           assert os.environ['PROJECT']!='wechatpresence' or os.environ['OUTPUT']=='dylib', 'WeChatPresence is standalone dylib only'
@@ -162,9 +162,20 @@ jobs:
           if os.environ['PROJECT']=='cryptosuite' and os.environ['OUTPUT']=='deb':
               expected={'iphoneos-arm64'}
           if os.environ['OUTPUT']=='dylib':
-              filename={'cryptosuite':f'CryptoSuite_{version}.dylib','alltags':f'AllTags_{version}.dylib','rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib'}[os.environ['PROJECT']]
+              filename={'cryptosuite':f'CryptoSuite_{version}.dylib','alltags':f'AllTags_{version}.dylib','rascalgroupactive':'RascalGroupActive.dylib','wechatpresence':'WeChatPresence_0.1.dylib','wechatuigrabber':f'WeChatUIGrabber_{version}.dylib','douyinsharingan':f'RascalDouyinSharingan_{version}.dylib'}[os.environ['PROJECT']]
               binary=Path('standalone')/filename
               assert binary.is_file() and binary.stat().st_size>0
+              if os.environ['PROJECT']=='douyinsharingan':
+                  archs=set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())
+                  assert archs=={'arm64','arm64e'}, 'Both required architectures must be present'
+                  strings=subprocess.check_output(['strings',str(binary)],text=True)
+                  for needle in ('RascalDouyinSharinganPanel','AWEMusicCoverButton',
+                                 'rascal_douyinsharingan_attachToWindow','generalPasteboard',
+                                 'numberOfTouchesRequired'):
+                      assert needle in strings, needle
+                  # The panel lives in the binary; no PreferenceLoader bundle may be produced.
+                  assert not list(Path('standalone').glob('*.bundle'))
+                  assert not list(Path('.theos/obj').glob('*.bundle'))
               if os.environ['PROJECT']=='wechatuigrabber':
                   archs=set(subprocess.check_output(['lipo','-archs',str(binary)],text=True).split())
                   assert archs=={'arm64','arm64e'}
@@ -336,6 +347,13 @@ jobs:
           req=urllib.request.Request(base,data=json.dumps(body).encode(),method='PUT',headers=h)
           urllib.request.urlopen(req,timeout=60).read()
           print('Failure log saved privately for owner review.')
+          PY
+      - name: Remove temporary source, packages and compiler log
+        if: always()
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private-source"
+          rm -f "$RUNNER_TEMP/private-build.log"
+ log saved privately for owner review.')
           PY
       - name: Remove temporary source, packages and compiler log
         if: always()
