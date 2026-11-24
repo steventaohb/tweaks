@@ -174,9 +174,10 @@ jobs:
                                  'rascal_douyinsharingan_attachToWindow','generalPasteboard',
                                  'material.png'):
                       assert needle in strings, needle
-                  # The card's own labels may be stored as UTF-8 literals or UTF-16 clipboard strings.
+                  # The card's own labels are UTF-8 literals inside the binary; the clipboard text
+                  # is assembled from them at runtime, so check the real strings.
                   blob=binary.read_bytes()
-                  for needle in ('设置','诊断'):
+                  for needle in ('抖音写轮眼','顺时针旋转','逆时针旋转','复制诊断','material.png'):
                       assert (needle.encode('utf-8') in blob or needle.encode('utf-16-le') in blob), needle
                   # The panel lives in the binary; no PreferenceLoader bundle may be produced.
                   assert not list(Path('standalone').glob('*.bundle'))
