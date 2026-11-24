@@ -177,7 +177,7 @@ jobs:
                   # The card's own labels are UTF-8 literals inside the binary; the clipboard text
                   # is assembled from them at runtime, so check the real strings.
                   blob=binary.read_bytes()
-                  for needle in ('抖音写轮眼','旋转','复制诊断','material.png','copyright'):
+                  for needle in ('抖音轮盘','旋转','复制诊断','material.png','Copyright'):
                       assert (needle.encode('utf-8') in blob or needle.encode('utf-16-le') in blob), needle
                   # The panel lives in the binary; no PreferenceLoader bundle may be produced.
                   assert not list(Path('standalone').glob('*.bundle'))
